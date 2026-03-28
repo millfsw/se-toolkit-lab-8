@@ -29,6 +29,7 @@ requires-python = "==3.14.*"
 dependencies = [
     "nanobot-ai @ https://github.com/HKUDS/nanobot/archive/e7d371ec1e6531b28898ec2c869ef338e8dd46ec.zip",
     "lms-mcp @ file:///app/mcp",
+    "mcp-observability @ file:///app/mcp/mcp-observability",
     "nanobot-webchat @ file:///app/nanobot-websocket-channel/nanobot-webchat",
     "nanobot-channel-protocol @ file:///app/nanobot-websocket-channel/nanobot-channel-protocol",
 ]
@@ -41,6 +42,7 @@ RUN uv pip install -r /tmp/pyproject.toml --system --no-cache
 COPY --chown=root:root nanobot-websocket-channel/nanobot-channel-protocol/src/nanobot_channel_protocol /usr/local/lib/python3.14/site-packages/nanobot_channel_protocol
 COPY --chown=root:root nanobot-websocket-channel/nanobot-webchat/src/nanobot_webchat /usr/local/lib/python3.14/site-packages/nanobot_webchat
 COPY --chown=root:root mcp/mcp_lms /usr/local/lib/python3.14/site-packages/mcp_lms
+COPY --chown=root:root mcp/mcp-observability/mcp_observability /usr/local/lib/python3.14/site-packages/mcp_observability
 
 # ---- Runtime stage ----
 FROM python:3.14-slim-bookworm

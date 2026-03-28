@@ -6,6 +6,7 @@ requires-python = "==3.14.2"
 members = [
     "lms-backend",
     "lms-mcp",
+    "mcp-observability",
     "nanobot",
     "nanobot-channel-protocol",
     "nanobot-webchat",
@@ -922,6 +923,23 @@ wheels = [
 ]
 
 [[package]]
+name = "mcp-observability"
+version = "1.0.0"
+source = { editable = "mcp/mcp-observability" }
+dependencies = [
+    { name = "httpx" },
+    { name = "mcp" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx", specifier = ">=0.28.0,<1.0.0" },
+    { name = "mcp", specifier = ">=1.26.0,<2.0.0" },
+    { name = "pydantic", specifier = ">=2.12.0,<3.0.0" },
+]
+
+[[package]]
 name = "mdurl"
 version = "0.1.2"
 source = { registry = "https://pypi.org/simple" }
@@ -1007,6 +1025,7 @@ version = "0.1.0"
 source = { virtual = "nanobot" }
 dependencies = [
     { name = "lms-mcp" },
+    { name = "mcp-observability" },
     { name = "nanobot-ai" },
     { name = "nanobot-webchat" },
 ]
@@ -1014,6 +1033,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "lms-mcp", editable = "mcp" },
+    { name = "mcp-observability", editable = "mcp/mcp-observability" },
     { name = "nanobot-ai", url = "https://github.com/HKUDS/nanobot/archive/e7d371ec1e6531b28898ec2c869ef338e8dd46ec.zip" },
     { name = "nanobot-webchat", editable = "nanobot-websocket-channel/nanobot-webchat" },
 ]

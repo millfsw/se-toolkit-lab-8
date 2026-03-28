@@ -82,12 +82,23 @@ Call traces_list with service="Learning Management Service", limit=10
 2. If errors found, call `logs_recent_errors` for details
 3. Summarize: "Yes, found X errors. Most are from [service]. The errors show [description]."
 
-### "What went wrong with the last request?"
-1. Call `logs_search` with query="level:error", limit=10
-2. Look for trace_id in the most recent error
-3. Call `traces_get` with that trace_id
-4. Examine span hierarchy to find where the error occurred
-5. Summarize: "The request failed at [span] due to [error]"
+### "What went wrong?" or "What went wrong with the last request?"
+This is a **multi-step investigation**. Chain the tools in order:
+
+1. **Find recent errors**: Call `logs_search` with `query="severity:ERROR"`, `limit=10`, `start="5m"`
+2. **Extract trace ID**: Look at the most recent error log and find the `trace_id` field
+3. **Fetch the trace**: Call `traces_get` with that `trace_id`
+4. **Analyze the trace**: Look at the span hierarchy to find which span has the error
+5. **Summarize concisely**: Combine log evidence + trace evidence into a coherent explanation
+
+Example response format:
+> "I found an error in the logs from 2 minutes ago. The log shows a database connection failure (error: 'connection refused'). The trace ID is `abc123...`. Looking at the full trace, the failure occurred in the `db_query` span — the backend tried to connect to PostgreSQL but the database was unavailable. The request completed with HTTP 500."
+
+### "Check system health"
+1. **Check observability stack**: Call `obs_health` to verify VictoriaLogs and VictoriaTraces are running
+2. **Check for recent errors**: Call `logs_error_count` with start="5m"
+3. **If errors found**: Follow the "What went wrong?" workflow above
+4. **Report status**: "Observability services are healthy. Found X errors in the last 5 minutes. [Details if any]"
 
 ### "Show me traces for the backend"
 1. Call `traces_list` with service="Learning Management Service", limit=10

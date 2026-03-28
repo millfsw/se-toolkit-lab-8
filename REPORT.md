@@ -392,15 +392,215 @@ The observability MCP server is registered in nanobot config:
 
 ## Task 4A — Multi-step investigation
 
-<!-- Paste the agent's response to "What went wrong?" showing chained log + trace investigation -->
+**Agent response to "What went wrong?":**
+
+Based on the error logs, here's what went wrong:
+
+## Root Cause: Database Connection Failure
+
+The **Learning Management Service (LMS)** cannot connect to its PostgreSQL database.
+
+### Error Details
+
+| Issue | Details |
+|-------|---------|
+| **Error Type** | `socket.gaierror: [Errno -2] Name or service not known` |
+| **Location** | `asyncpg` connection attempt in the ETL pipeline |
+| **Affected Operation** | Database query on the `item` table |
+
+### What This Means
+
+The LMS backend is trying to connect to a PostgreSQL database using a hostname (likely something like `postgres` or `db` in a Docker/container setup), but the DNS resolution is failing. The service cannot find the database server.
+
+### Likely Causes
+
+1. **Database container is down** – The PostgreSQL service isn't running
+2. **Network isolation** – The LMS container can't reach the database network
+3. **Wrong hostname** – The `DATABASE_URL` environment variable points to an incorrect host
+4. **DNS issue** – Container DNS resolution is broken
+
+### How to Fix
+
+Check the following:
+
+```bash
+# 1. Check if the database container is running
+docker ps | grep postgres
+
+# 2. Check LMS environment variables
+docker exec <lms-container> env | grep DATABASE
+
+# 3. Test connectivity from LMS container
+docker exec <lms-container> ping <db-hostname>
+
+# 4. Check docker network
+docker network ls
+docker network inspect <network-name>
+```
+
+**Summary:** The agent successfully used the observability tools to find error logs showing a database connection failure. The error `socket.gaierror: [Errno -2] Name or service not known` indicates the LMS backend cannot resolve the PostgreSQL hostname — this happens when PostgreSQL container is stopped.
 
 ## Task 4B — Proactive health check
 
-<!-- Screenshot or transcript of the proactive health report that appears in the Flutter chat -->
+**Proactive health report from Flutter chat (while PostgreSQL was stopped):**
+
+```
+## 🔍 LMS Health Check Report
+
+**Status: ❌ UNHEALTHY**
+
+### LMS Backend
+- **Status**: Unhealthy (HTTP 404)
+- **Item Count**: Unknown (cannot query database)
+
+### Observability Services
+- **VictoriaLogs**: ✅ Healthy
+- **VictoriaTraces**: ✅ Healthy
+
+### Recent Errors (Last 2 Minutes)
+**1 error found at 11:18:52** - Database connection failure:
+- **Error**: `[Errno -2] Name or service not known`
+- **Service**: Learning Management Service
+- **Operation**: `db_query` (SELECT on `item` table)
+
+### Root Cause
+The LMS backend cannot resolve the PostgreSQL database hostname. This is a **DNS resolution failure** preventing database connectivity.
+
+### Error Pattern (Last ~20 minutes)
+Multiple recurring errors showing:
+1. DNS resolution failures (`Name or service not known`)
+2. Closed database connections (`connection is closed`)
+3. Pipeline sync failures at `/pipeline/sync` endpoint
+
+### Recommended Actions
+1. Check database service DNS/hostname configuration
+2. Verify PostgreSQL service is running and accessible
+3. Check network connectivity between LMS and database
+4. Review environment variables for database connection string
+```
+
+**Summary:** The agent successfully created a cron job (ID: `1bc930fb`) that runs every 2 minutes. The proactive health report appeared in the same Flutter chat while PostgreSQL was stopped, showing the database connection failure with specific error details and recommended actions.
 
 ## Task 4C — Bug fix and recovery
 
-<!-- 1. Root cause identified
-     2. Code fix (diff or description)
-     3. Post-fix response to "What went wrong?" showing the real underlying failure
-     4. Healthy follow-up report or transcript after recovery -->
+### 1. Root Cause — Planted Bug
+
+**Location:** `/backend/app/routers/items.py` — `get_items()` endpoint
+
+**The Bug:**
+```python
+@router.get("/", response_model=list[ItemRecord])
+async def get_items(session: AsyncSession = Depends(get_session)):
+    """Get all items."""
+    try:
+        return await read_items(session)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,  # ❌ Wrong status code!
+            detail="Items not found",  # ❌ Misleading message
+        ) from exc
+```
+
+**Problem:** All exceptions (including database connection failures) were caught and re-raised as `HTTP 404 Not Found` with a misleading message "Items not found". This **hid the real error** — the backend was returning 404 even when the database was unreachable, making diagnosis impossible.
+
+---
+
+### 2. Fix Applied
+
+**Changed file:** `backend/app/routers/items.py`
+
+**The Fix:**
+```python
+@router.get("/", response_model=list[ItemRecord])
+async def get_items(session: AsyncSession = Depends(get_session)):
+    """Get all items."""
+    try:
+        return await read_items(session)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,  # ✅ Correct status
+            detail=f"Database error: {str(exc)}",  # ✅ Real error message
+        ) from exc
+```
+
+**Changes:**
+- Status code: `404` → `500` (Internal Server Error for database failures)
+- Detail: `"Items not found"` → `f"Database error: {str(exc)}"` (includes actual error)
+
+---
+
+### 3. Post-Fix Failure Check
+
+**Agent response to "What went wrong?" after redeploy (while PostgreSQL was still stopped):**
+
+```
+## Root Cause: Database Connectivity Failure
+
+The Learning Management Service (LMS) cannot connect to its PostgreSQL database.
+
+### Timeline
+| Time | Event |
+|------|-------|
+| ~11:01 | First database connection errors appear |
+| 11:03 | ETL pipeline sync fails (/pipeline/sync → 500) |
+| 11:13-11:22 | Continued db_query failures on item table |
+| 11:22 | GET /items/ returns 500 (labs endpoint broken) |
+
+### Technical Details
+| Component | Status |
+|-----------|--------|
+| LMS Backend | Running (responding with 500) |
+| PostgreSQL | Unreachable (DNS failure) |
+| Error Type | socket.gaierror: [Errno -2] |
+| Affected | All database queries (labs, items, learners, etc.) |
+```
+
+**Key difference:** After the fix, the agent correctly sees **HTTP 500** errors with the real database connection failure details, not misleading 404 "Items not found" errors.
+
+---
+
+### 4. Healthy Follow-Up — After PostgreSQL Restart
+
+**Agent response after PostgreSQL was restarted:**
+
+```
+## ✅ Labs Retrieved Successfully
+
+The LMS is now healthy (56 items in database). Here are all available labs:
+
+| ID | Lab Title |
+|----|-----------|
+| 1 | Lab 01 – Products, Architecture & Roles |
+| 2 | Lab 02 — Run, Fix, and Deploy a Backend Service |
+| ... |
+| 8 | lab-08 |
+
+Total: 8 labs
+```
+
+**Proactive health check report (2 minutes later):**
+
+```
+## 🔍 LMS Health Check Report (11:25)
+
+**Status: ✅ HEALTHY** 🎉
+
+### LMS Backend
+- Status: Healthy
+- Item Count: 56 items
+- Error: None
+
+### Recent Errors (Last 2 Minutes)
+**No errors detected** ✅
+
+### Recovery Summary
+The LMS backend has fully recovered from the PostgreSQL DNS resolution issue:
+
+| Time | Status | Notes |
+|------|--------|-------|
+| 11:01 - 11:23 | ❌ Unhealthy | DNS resolution failures |
+| 11:24 | 🟡 Recovering | Connection restored |
+| 11:25 | ✅ Healthy | All systems operational |
+```
+
+**Summary:** After fixing the planted bug and restarting PostgreSQL, the system fully recovered. The agent's proactive health check correctly reported no errors and confirmed the LMS backend was healthy with all 56 items accessible.
