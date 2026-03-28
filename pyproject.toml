@@ -2,6 +2,7 @@
 members = [
     "backend",
     "mcp",
+    "mcp/mcp-observability",
     "qwen-code-api",
     "nanobot",
     "nanobot-websocket-channel/nanobot-webchat",
