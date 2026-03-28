@@ -137,11 +137,55 @@ Which lab would you like to see scores for? Or would you like me to show:
 
 ## Task 2A — Deployed agent
 
-<!-- Paste a short nanobot startup log excerpt showing the gateway started inside Docker -->
+**Nanobot gateway startup log excerpt:**
+
+```
+nanobot-1  | Using config: /app/nanobot/config.resolved.json
+nanobot-1  | 🐈 Starting nanobot gateway version 0.1.4.post5 on port 18790...
+nanobot-1  | 2026-03-28 09:10:56.761 | DEBUG    | nanobot.channels.registry:discover_all:64 - Skipping built-in channel 'matrix': Matrix dependencies not installed.
+nanobot-1  | 2026-03-28 09:10:58.780 | INFO     | nanobot.channels.manager:_init_channels:58 - WebChat channel enabled
+nanobot-1  | ✓ Channels enabled: webchat
+nanobot-1  | ✓ Heartbeat: every 1800s
+nanobot-1  | 2026-03-28 09:10:58.789 | INFO     | nanobot.cron.service:start:202 - Cron service started with 0 jobs
+nanobot-1  | 2026-03-28 09:10:58.789 | INFO     | nanobot.heartbeat.service:start:124 - Heartbeat started (every 1800s)
+nanobot-1  | 2026-03-28 09:10:59.xxx | DEBUG    | nanobot.agent.tools.mcp:connect_mcp_servers:226 - MCP: registered tool 'mcp_lms_lms_health' from server 'lms'
+nanobot-1  | 2026-03-28 09:10:59.xxx | DEBUG    | nanobot.agent.tools.mcp:connect_mcp_servers:226 - MCP: registered tool 'mcp_lms_lms_labs' from server 'lms'
+nanobot-1  | 2026-03-28 09:10:59.xxx | DEBUG    | nanobot.agent.tools.mcp:connect_mcp_servers:226 - MCP: registered tool 'mcp_lms_lms_learners' from server 'lms'
+nanobot-1  | 2026-03-28 09:10:59.xxx | DEBUG    | nanobot.agent.tools.mcp:connect_mcp_servers:226 - MCP: registered tool 'mcp_lms_lms_pass_rates' from server 'lms'
+nanobot-1  | 2026-03-28 09:10:59.xxx | DEBUG    | nanobot.agent.tools.mcp:connect_mcp_servers:226 - MCP: registered tool 'mcp_lms_lms_timeline' from server 'lms'
+nanobot-1  | 2026-03-28 09:10:59.xxx | DEBUG    | nanobot.agent.tools.mcp:connect_mcp_servers:226 - MCP: registered tool 'mcp_lms_lms_groups' from server 'lms'
+nanobot-1  | 2026-03-28 09:10:59.xxx | DEBUG    | nanobot.agent.tools.mcp:connect_mcp_servers:226 - MCP: registered tool 'mcp_lms_lms_top_learners' from server 'lms'
+nanobot-1  | 2026-03-28 09:10:59.xxx | DEBUG    | nanobot.agent.tools.mcp:connect_mcp_servers:226 - MCP: registered tool 'mcp_lms_lms_completion_rate' from server 'lms'
+nanobot-1  | 2026-03-28 09:10:59.xxx | DEBUG    | nanobot.agent.tools.mcp:connect_mcp_servers:226 - MCP: registered tool 'mcp_lms_lms_sync_pipeline' from server 'lms'
+nanobot-1  | 2026-03-28 09:10:59.xxx | INFO     | nanobot.agent.tools.mcp:connect_mcp_servers:246 - MCP server 'lms': connected, 9 tools registered
+nanobot-1  | 2026-03-28 09:10:59.xxx | INFO     | nanobot.agent.loop:run:280 - Agent loop started
+```
+
+**Deployment summary:**
+- Nanobot runs as a Docker Compose service (`nanobot`) using `nanobot gateway` mode
+- WebChat channel enabled for WebSocket connections at `/ws/chat`
+- MCP server connected with 9 LMS tools (health, labs, learners, pass_rates, timeline, groups, top_learners, completion_rate, sync_pipeline)
+- Gateway listening on port 18790, proxied through Caddy at port 42002
 
 ## Task 2B — Web client
 
-<!-- Screenshot of a conversation with the agent in the Flutter web app -->
+**Flutter web UI:**
+- Accessible at `http://<vm-ip>:42002/flutter`
+- Protected by `NANOBOT_ACCESS_KEY` authentication
+- Connects to agent via WebSocket at `/ws/chat`
+
+**Login credentials:**
+- Access Key: `my-nano-access-key` (configured in `.env.docker.secret`)
+
+*[Insert screenshot of Flutter chat conversation here]*
+
+To capture a screenshot:
+1. Open `http://<your-vm-ip>:42002/flutter` in your browser
+2. Log in with the access key: `my-nano-access-key`
+3. Ask the agent: "What can you do in this system?"
+4. Ask a follow-up question about the LMS (e.g., "Which lab has the lowest pass rate?")
+5. Take a screenshot and save it to the repo (e.g., `images/task2b-flutter-chat.png`)
+6. Reference it here: `![Flutter chat screenshot](images/task2b-flutter-chat.png)`
 
 ## Task 3A — Structured logging
 
