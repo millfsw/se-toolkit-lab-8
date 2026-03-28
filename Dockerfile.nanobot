@@ -1,0 +1,61 @@
+# Multi-stage build for nanobot gateway
+# Build context: workspace root (.)
+
+# ---- Build stage ----
+FROM ghcr.io/astral-sh/uv:python3.14-bookworm AS builder
+
+WORKDIR /app
+
+# Copy root workspace files
+COPY pyproject.toml uv.lock* ./
+
+# Copy nanobot project
+COPY nanobot/pyproject.toml nanobot/entrypoint.py nanobot/config.json ./nanobot/
+
+# Copy workspace members that nanobot needs
+COPY mcp ./mcp
+COPY nanobot-websocket-channel/nanobot-webchat ./nanobot-websocket-channel/nanobot-webchat
+COPY nanobot-websocket-channel/nanobot-channel-protocol ./nanobot-websocket-channel/nanobot-channel-protocol
+
+# Copy nanobot workspace
+COPY nanobot/workspace ./nanobot/workspace
+
+# Create a temporary pyproject.toml that installs from local paths
+RUN cat > /tmp/pyproject.toml << 'EOF'
+[project]
+name = "nanobot-runtime"
+version = "1.0.0"
+requires-python = "==3.14.*"
+dependencies = [
+    "nanobot-ai @ https://github.com/HKUDS/nanobot/archive/e7d371ec1e6531b28898ec2c869ef338e8dd46ec.zip",
+    "lms-mcp @ file:///app/mcp",
+    "nanobot-webchat @ file:///app/nanobot-websocket-channel/nanobot-webchat",
+    "nanobot-channel-protocol @ file:///app/nanobot-websocket-channel/nanobot-channel-protocol",
+]
+EOF
+
+# Install from the temporary pyproject.toml
+RUN uv pip install -r /tmp/pyproject.toml --system --no-cache
+
+# Copy the source modules directly to site-packages to avoid editable install issues
+COPY --chown=root:root nanobot-websocket-channel/nanobot-channel-protocol/src/nanobot_channel_protocol /usr/local/lib/python3.14/site-packages/nanobot_channel_protocol
+COPY --chown=root:root nanobot-websocket-channel/nanobot-webchat/src/nanobot_webchat /usr/local/lib/python3.14/site-packages/nanobot_webchat
+COPY --chown=root:root mcp/mcp_lms /usr/local/lib/python3.14/site-packages/mcp_lms
+
+# ---- Runtime stage ----
+FROM python:3.14-slim-bookworm
+
+WORKDIR /app/nanobot
+
+# Copy installed packages from builder
+COPY --from=builder /usr/local/lib/python3.14/site-packages /usr/local/lib/python3.14/site-packages
+
+# Copy application files
+COPY nanobot/config.json nanobot/entrypoint.py ./
+COPY nanobot/workspace ./workspace
+
+# Set PYTHONPATH to include /app for MCP server
+ENV PYTHONPATH="/app"
+
+# Run the entrypoint
+CMD ["python", "/app/nanobot/entrypoint.py"]
