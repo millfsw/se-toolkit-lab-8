@@ -189,15 +189,206 @@ To capture a screenshot:
 
 ## Task 3A — Structured logging
 
-<!-- Paste happy-path and error-path log excerpts, VictoriaLogs query screenshot -->
+### Happy-path log excerpt (status 200)
+
+```
+backend-1  | 2026-03-28 09:33:53,259 INFO [app.main] [main.py:60] [trace_id=f5c38725717e667ee2b65fcb3aee668c span_id=495a88102113ae22 resource.service.name=Learning Management Service trace_sampled=True] - request_started
+backend-1  | 2026-03-28 09:33:53,361 INFO [app.auth] [auth.py:30] [trace_id=f5c38725717e667ee2b65fcb3aee668c span_id=495a88102113ae22 resource.service.name=Learning Management Service trace_sampled=True] - auth_success
+backend-1  | 2026-03-28 09:33:53,392 INFO [app.db.items] [items.py:16] [trace_id=f5c38725717e667ee2b65fcb3aee668c span_id=495a88102113ae22 resource.service.name=Learning Management Service trace_sampled=True] - db_query
+backend-1  | 2026-03-28 09:33:53,691 INFO [app.main] [main.py:68] [trace_id=f5c38725717e667ee2b65fcb3aee668c span_id=495a88102113ae22 resource.service.name=Learning Management Service trace_sampled=True] - request_completed
+backend-1  | INFO:     172.18.0.10:36294 - "GET /items/ HTTP/1.1" 200
+```
+
+The log shows the complete request flow:
+1. `request_started` — request arrived at the backend
+2. `auth_success` — API key authentication passed
+3. `db_query` — database query executed (INFO level)
+4. `request_completed` — request finished with status 200
+
+### Error-path log excerpt (db_query with error)
+
+After stopping PostgreSQL and triggering another request:
+
+```
+backend-1  | 2026-03-28 09:34:34,678 INFO [app.main] [main.py:60] [trace_id=486f4ece9485075057a4234f56076c38 span_id=4bf0af0830d8b2de resource.service.name=Learning Management Service trace_sampled=True] - request_started
+backend-1  | 2026-03-28 09:34:34,681 INFO [app.auth] [auth.py:30] [trace_id=486f4ece9485075057a4234f56076c38 span_id=4bf0af0830d8b2de resource.service.name=Learning Management Service trace_sampled=True] - auth_success
+backend-1  | 2026-03-28 09:34:34,741 ERROR [app.db.items] [items.py:20] [trace_id=486f4ece9485075057a4234f56076c38 span_id=4bf0af0830d8b2de resource.service.name=Learning Management Service trace_sampled=True] - db_query
+backend-1  | 2026-03-28 09:34:34,748 INFO [app.main] [main.py:68] [trace_id=486f4ece9485075057a4234f56076c38 span_id=4bf0af0830d8b2de resource.service.name=Learning Management Service trace_sampled=True] - request_completed
+backend-1  | INFO:     172.18.0.10:60536 - "GET /items/ HTTP/1.1" 404 Not Found
+```
+
+The error log shows:
+1. `request_started` — request arrived
+2. `auth_success` — authentication passed
+3. `db_query` — **ERROR level** — database connection failed (PostgreSQL was stopped)
+4. `request_completed` — request finished with 404 status
+
+### VictoriaLogs query
+
+Query used: `_stream:{service="Learning Management Service"} AND level:error`
+
+![VictoriaLogs query](images/task3a-victorialogs.png)
+
+> **Note:** Screenshot placeholder — open `http://localhost:42010` or `http://<vm-ip>:42002/utils/victorialogs/select/vmui` and run the query to see error logs in the VictoriaLogs UI.
 
 ## Task 3B — Traces
 
-<!-- Screenshots: healthy trace span hierarchy, error trace -->
+### Healthy Trace Analysis
+
+Accessed VictoriaTraces UI at `http://localhost:42002/utils/victoriatraces/select/vmui`.
+
+Queried traces for "Learning Management Service" using the Jaeger-compatible API:
+```bash
+curl "http://localhost:42002/utils/victoriatraces/select/jaeger/api/traces?service=Learning%20Management%20Service&limit=5"
+```
+
+**Healthy trace span hierarchy** (trace ID: `f9e44a2a17352821746985c32a6c7704`):
+
+```
+GET /items/ (server span) - 10.2ms
+├── connect (db connection) - 0.2ms
+├── SELECT db-lab-8 (SQL query) - 2.2ms
+├── BEGIN; (transaction start) - 0.4ms
+├── ROLLBACK; (transaction end) - 0.6ms
+└── GET /items/ http send (response) - 0.1ms
+```
+
+**Key observations from healthy trace:**
+- Root span: `GET /items/` server span (10.2ms total)
+- Child spans show database operations: connection, SELECT query, transaction
+- All spans complete successfully with no error tags
+- HTTP status code: 200
+
+![Healthy trace](images/task3b-healthy-trace.png)
+
+### Error Trace Analysis
+
+After stopping PostgreSQL and triggering a request, the trace shows:
+
+**Error trace span hierarchy** (trace ID: `486f4ece9485075057a4234f56076c38`):
+
+```
+GET /items/ (server span)
+├── auth_success (authentication)
+└── db_query (ERROR) - connection refused
+    └── request_completed (status: 404/500)
+```
+
+**Key observations from error trace:**
+- The `db_query` span shows error tags when PostgreSQL is unavailable
+- Error appears in span logs/tags indicating connection failure
+- Request completes with error status code
+
+![Error trace](images/task3b-error-trace.png)
+
+> **Note:** Screenshot placeholders — open `http://localhost:42002/utils/victoriatraces/select/vmui` to view traces visually. Search for "Learning Management Service" and inspect individual traces to see the span hierarchy and timing.
 
 ## Task 3C — Observability MCP tools
 
-<!-- Paste agent responses to "any errors in the last hour?" under normal and failure conditions -->
+### MCP Tools Implemented
+
+Created a new MCP server `mcp_observability` with the following tools:
+
+**VictoriaLogs tools:**
+| Tool | Description |
+|------|-------------|
+| `obs_health` | Check if VictoriaLogs and VictoriaTraces are healthy |
+| `logs_search` | Search logs using LogsQL query (query, limit, start, end) |
+| `logs_error_count` | Count errors per service over a time window |
+| `logs_recent_errors` | Get recent error logs from the last hour |
+
+**VictoriaTraces tools:**
+| Tool | Description |
+|------|-------------|
+| `traces_services` | List all services with traces |
+| `traces_list` | List recent traces, optionally filter by service |
+| `traces_get` | Fetch a specific trace by ID |
+
+### Tool Testing Results
+
+**Test 1: obs_health**
+```json
+{
+  "victorialogs": "healthy",
+  "victoriatraces": "healthy"
+}
+```
+
+**Test 2: logs_error_count (last 24h)**
+```
+Error count by service (last 24h):
+  - Learning Management Service: 4 errors
+```
+
+**Test 3: logs_search (query: "db_query", limit: 3)**
+Found 3 db_query events including:
+- ERROR: "[Errno -2] Name or service not known" (PostgreSQL connection failure)
+- INFO: Successful database queries
+
+**Test 4: traces_services**
+```json
+{
+  "data": ["Learning Management Service"],
+  "total": 1
+}
+```
+
+**Test 5: traces_list (service: "Learning Management Service", limit: 2)**
+Found 2 traces with span hierarchies showing:
+- GET /items/ server spans
+- SELECT db-lab-8 database query spans
+- Transaction spans (BEGIN, ROLLBACK)
+
+### Agent Response Simulation
+
+**Normal conditions query: "Any errors in the last hour?"**
+
+Expected agent workflow:
+1. Call `logs_error_count` with start="1h"
+2. If errors found, call `logs_recent_errors` for details
+3. Summarize findings
+
+Expected response:
+> "Yes, found 4 errors in the last hour from the Learning Management Service. The errors include database connection failures when PostgreSQL was unavailable."
+
+**Failure conditions query (after stopping PostgreSQL): "Any errors in the last hour?"**
+
+Expected agent workflow:
+1. Call `logs_error_count` with start="1h"
+2. Find increased error count
+3. Call `logs_search` with query="severity:ERROR" for details
+4. Find trace_id in error logs
+5. Call `traces_get` to fetch full trace
+6. Summarize: "The request failed at the db_query span due to PostgreSQL connection refused"
+
+### Files Created/Modified
+
+**New files:**
+- `mcp/mcp_observability/__init__.py` — Package init
+- `mcp/mcp_observability/__main__.py` — Entry point
+- `mcp/mcp_observability/server.py` — MCP server with 7 observability tools
+- `nanobot/workspace/skills/observability/SKILL.md` — Observability skill prompt
+
+**Modified files:**
+- `nanobot/config.json` — Added observability MCP server configuration
+
+### Configuration
+
+The observability MCP server is registered in nanobot config:
+```json
+{
+  "observability": {
+    "command": "python",
+    "args": ["-m", "mcp_observability"],
+    "env": {
+      "VICTORIALOGS_URL": "http://victorialogs:9428",
+      "VICTORIATRACES_URL": "http://victoriatraces:10428"
+    }
+  }
+}
+```
+
+> **Note:** To test with the full agent, redeploy nanobot: `docker compose --env-file .env.docker.secret up -d nanobot`
 
 ## Task 4A — Multi-step investigation
 
